@@ -153,8 +153,12 @@ tidy: ## Sync go.mod/go.sum
 	$(GO) mod tidy
 
 lint: ## Lint if golangci-lint is installed; otherwise print a hint
-	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint not found. Install: https://golangci-lint.run/"; exit 0; }
-	golangci-lint run
+	@set -e; \
+	if command -v golangci-lint >/dev/null 2>&1; then \
+	  golangci-lint run; \
+	else \
+	  echo "golangci-lint not found. Install: https://golangci-lint.run/"; \
+	fi
 
 ci: tidy fmt vet lint race cover cover-html ## CI bundle: tidy, fmt, vet, lint, race tests, cover, cover-html
 
