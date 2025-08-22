@@ -20,10 +20,10 @@ BUILT_BY   ?= $(shell whoami)
 # IMPORTANT: use your module path here. Currently it's 'kcalc-add'.
 # If you later change module to 'github.com/YOURUSER/kcalc-add',
 # update the package path prefix below accordingly.
-LDFLAGS := -X 'github.com/ssmythe/kcalc-add/cmd/kcalc-add.Version=$(VERSION)' \
-           -X 'github.com/ssmythe/kcalc-add/cmd/kcalc-add.Commit=$(COMMIT)'   \
-           -X 'github.com/ssmythe/kcalc-add/cmd/kcalc-add.Date=$(DATE)'       \
-           -X 'github.com/ssmythe/kcalc-add/cmd/kcalc-add.BuiltBy=$(BUILT_BY)'
+LDFLAGS := -X 'main.Version=$(VERSION)' \
+           -X 'main.Commit=$(COMMIT)'   \
+           -X 'main.Date=$(DATE)'       \
+           -X 'main.BuiltBy=$(BUILT_BY)'
 
 GO         ?= go
 PKG        ?= ./...
