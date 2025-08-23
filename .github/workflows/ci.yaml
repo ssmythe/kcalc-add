@@ -46,10 +46,7 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.58.1
-          args: version
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.58.1
 
       - name: Clean Go build caches
         run: go clean -cache -modcache -testcache
