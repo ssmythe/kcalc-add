@@ -92,6 +92,21 @@ jobs:
       - name: Integration test (spins server on 18080)
         run: make ci-full
 
+      - name: Where am I?
+        if: always()
+        run: |
+          echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
+          pwd
+          ls -la
+
+      - name: Find log
+        if: always()
+        run: |
+          echo "Listing potential log locations..."
+          find "${GITHUB_WORKSPACE}" -maxdepth 2 -type f -name ".itest_server.log" -ls || true
+          echo "--- tail ---"
+          tail -n 50 "${GITHUB_WORKSPACE}/.itest_server.log" || true
+
       - name: Upload integration logs
         if: always()
         uses: actions/upload-artifact@v4
