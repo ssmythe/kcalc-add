@@ -134,7 +134,7 @@ integration-test: ## Run integration tests against a live server
 	BASE_URL="$(IT_URL)" $(GO) test -v -count=1 ./itest
 
 integration-clean: ## Clean integration artifacts
-	@rm -f "$(IT_PIDFILE)" "$(IT_LOG)"
+	@rm -f "$(IT_PIDFILE)"
 
 bench: ## Run benchmarks (if any)
 	$(GO) test -bench=. -benchmem $(PKG)

@@ -51,11 +51,8 @@ jobs:
       - name: Clean Go build caches
         run: go clean -cache -modcache -testcache
 
-      - name: Make ci
-        run: make ci
-
-      - name: Coverage (HTML)
-        run: make cover-html
+      - name: Make ci-full
+        run: make ci-full
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
