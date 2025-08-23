@@ -17,7 +17,7 @@ bin/
 *.pid
 
 # Logs
-*.log
+artifacts/
 
 # VS Code settings
 .vscode/

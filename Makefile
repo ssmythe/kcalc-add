@@ -2,18 +2,19 @@
 
 SHELL    := /bin/bash
 
-APP      ?= kcalc-add
-CMDDIR   ?= ./cmd/$(APP)
+APP           ?= kcalc-add
+CMDDIR        ?= ./cmd/$(APP)
+ARTIFACTS_DIR ?= $(abspath artifacts)
 
-BINARY ?= kcalc-add
-BUILD_DIR ?= bin
+BINARY        ?= kcalc-add
+BUILD_DIR     ?= bin
 
-PORT     ?= 8080
-RUN_PID  ?= .run_server.pid
-RUN_LOG  ?= .run_server.log
+PORT          ?= 8080
+RUN_PID       ?= .run_server.pid
+RUN_LOG       ?= .run_server.log
 
 # pick ephemeral port and capture it to a file
-PORT_FILE ?= $(CURDIR)/.itest_server.port
+PORT_FILE     ?= $(ARTIFACTS_DIR)/itest_server.port
 
 VERSION    ?= $(shell git describe --tags --dirty 2>/dev/null || echo 0.0.0-local)
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -43,7 +44,7 @@ COV_HTML   ?= coverage.html
 IT_PORT    ?= 18080
 IT_URL     ?= http://127.0.0.1:$(IT_PORT)
 IT_PIDFILE ?= .itest_server.pid
-IT_LOG     ?= $(CURDIR)/.itest_server.log
+IT_LOG     ?= $(ARTIFACTS_DIR)/itest_server.log
 IT_WAIT_MS ?= 5000       # total wait ~5s
 IT_STEP_MS ?= 100
 
@@ -118,39 +119,23 @@ stop: ## stop service
 
 integration-test: ## Run integration tests against a live server
 	@set -euo pipefail; \
-	command -v curl >/dev/null 2>&1 || { echo "curl is required for integration tests"; exit 1; } ; \
-	# CLEAN STALE ARTIFACTS FIRST
+	mkdir -p "$(ARTIFACTS_DIR)"; \
 	rm -f "$(PORT_FILE)" "$(IT_LOG)" "$(IT_PIDFILE)"; \
-	\
+	: >"$(IT_LOG)"; \
 	trap 'rc=$$?; echo "Stopping server..."; \
-	      if [ -f "$(IT_PIDFILE)" ]; then kill -TERM $$(cat "$(IT_PIDFILE)") 2>/dev/null || true; \
-	      wait $$(cat "$(IT_PIDFILE)") 2>/dev/null || true; fi; \
+	      if [ -f "$(IT_PIDFILE)" ]; then \
+	        kill -TERM "$$(cat "$(IT_PIDFILE)")" 2>/dev/null || true; \
+	        wait "$$(cat "$(IT_PIDFILE)")" 2>/dev/null || true; \
+	      fi; \
 	      exit $$rc' EXIT INT TERM; \
-	\
 	echo "Starting server on ephemeral port ..."; \
-	# Prefer running the built binary for determinism
 	$(MAKE) -s build; \
-	PORT=0 PORT_FILE="$(PORT_FILE)" LOG_FILE="$(IT_LOG)" ./$(BUILD_DIR)/$(BINARY) >/dev/null 2>&1 & echo $$! > "$(IT_PIDFILE)"; \
-	\
-	# wait for port file to appear and read it
-	for i in $$(seq 1 100); do \
-		if [ -s "$(PORT_FILE)" ]; then break; fi; \
-		sleep 0.05; \
-	done; \
-	if [ ! -s "$(PORT_FILE)" ]; then \
-		echo "Port file not written; last log lines:"; tail -n 100 "$(IT_LOG)" || true; exit 1; \
-	fi; \
-	IT_PORT=$$(cat "$(PORT_FILE)"); \
-	IT_URL="http://127.0.0.1:$${IT_PORT}"; \
-	echo "Discovered port: $${IT_PORT}"; \
-	\
-	echo "Waiting for readiness at $${IT_URL}/healthz ..."; \
-	for i in $$(seq 1 100); do \
-		if curl -sf "$${IT_URL}/healthz" >/dev/null 2>&1; then echo "Server is up."; break; fi; \
-		sleep 0.05; \
-	done; \
+	PORT=0 PORT_FILE="$(PORT_FILE)" LOG_FILE="$(IT_LOG)" ./$(BUILD_DIR)/$(BINARY) >/dev/null 2>&1 & echo $$! >"$(IT_PIDFILE)"; \
+	for i in $$(seq 1 100); do [ -s "$(PORT_FILE)" ] && break; sleep 0.05; done; \
+	if [ ! -s "$(PORT_FILE)" ]; then echo "Port file not written; last logs:"; tail -n 200 "$(IT_LOG)" || true; exit 1; fi; \
+	IT_PORT=$$(cat "$(PORT_FILE)"); IT_URL="http://127.0.0.1:$${IT_PORT}"; \
+	for i in $$(seq 1 100); do curl -sf "$${IT_URL}/healthz" >/dev/null 2>&1 && { echo "Server is up."; break; }; sleep 0.05; done; \
 	curl -sf "$${IT_URL}/healthz" >/dev/null || { echo "Server failed to start. Last logs:"; tail -n 200 "$(IT_LOG)" || true; exit 1; }; \
-	\
 	echo "Running integration tests..."; \
 	BASE_URL="$${IT_URL}" $(GO) test -v -count=1 ./itest
 

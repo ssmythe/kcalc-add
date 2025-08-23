@@ -107,10 +107,9 @@ jobs:
           echo "--- tail ---"
           tail -n 50 "${GITHUB_WORKSPACE}/.itest_server.log" || true
 
-      - name: Upload integration logs
+      - name: Upload integration artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: integration-logs
-          path: |
-            ${{ github.workspace }}/.itest_server.log
+          name: integration-artifacts
+          path: ${{ github.workspace }}/artifacts/**
