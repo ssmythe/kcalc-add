@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/ssmythe/kcalc-add/service"
@@ -32,7 +33,10 @@ func AddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	res := addResponse{Result: service.Add(req.A, req.B)}
+	// optional: log inputs+result
+	log.Printf("add: a=%v b=%v result=%v", req.A, req.B, res.Result)
 	writeJSON(w, http.StatusOK, res)
+
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

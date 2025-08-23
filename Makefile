@@ -12,6 +12,9 @@ PORT     ?= 8080
 RUN_PID  ?= .run_server.pid
 RUN_LOG  ?= .run_server.log
 
+# pick ephemeral port and capture it to a file
+PORT_FILE ?= $(CURDIR)/.itest_server.port
+
 VERSION    ?= $(shell git describe --tags --dirty 2>/dev/null || echo 0.0.0-local)
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE       ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -40,7 +43,7 @@ COV_HTML   ?= coverage.html
 IT_PORT    ?= 18080
 IT_URL     ?= http://127.0.0.1:$(IT_PORT)
 IT_PIDFILE ?= .itest_server.pid
-IT_LOG     ?= .itest_server.log
+IT_LOG     ?= $(CURDIR)/.itest_server.log
 IT_WAIT_MS ?= 5000       # total wait ~5s
 IT_STEP_MS ?= 100
 
@@ -50,7 +53,7 @@ IT_STEP_MS ?= 100
 .DEFAULT_GOAL := test
 
 .PHONY: build test testv race cover cover-html bench fuzz fmt vet tidy lint ci ci-full clean help \
-        run stop integration-test integration-clean build build-linux build-darwin print-version
+        run curl stop integration-test integration-clean build build-linux build-darwin print-version
 
 build: ## Build the service binary (with version info)
 	@mkdir -p $(BUILD_DIR)
@@ -93,8 +96,14 @@ run: build ## run service
 	if [ -f "$(RUN_PID)" ] && kill -0 "$$(cat "$(RUN_PID)")" 2>/dev/null; then \
 	  echo "Already running (pid $$(cat "$(RUN_PID)"))"; exit 0; fi; \
 	echo "Starting :$(PORT) ..."; \
-	PORT="$(PORT)" ./$(BUILD_DIR)/$(BINARY) >"$(RUN_LOG)" 2>&1 & echo $$! >"$(RUN_PID)"; \
+	PORT="$(PORT)" LOG_FILE="$(RUN_LOG)" ./$(BUILD_DIR)/$(BINARY) >/dev/null 2>&1 & echo $$! >"$(RUN_PID)"; \
 	echo "pid $$(cat "$(RUN_PID)") (logs: $(RUN_LOG))"
+
+curl: ## quick curl of service
+	@curl -s -X POST http://localhost:8080/add \
+	  -H 'Content-Type: application/json' \
+	  -d '{"a":2.5,"b":3.1}'
+	# => {"result":5.6}
 
 stop: ## stop service
 	@set -euo pipefail; \
@@ -110,31 +119,43 @@ stop: ## stop service
 integration-test: ## Run integration tests against a live server
 	@set -euo pipefail; \
 	command -v curl >/dev/null 2>&1 || { echo "curl is required for integration tests"; exit 1; } ; \
+	# CLEAN STALE ARTIFACTS FIRST
+	rm -f "$(PORT_FILE)" "$(IT_LOG)" "$(IT_PIDFILE)"; \
+	\
 	trap 'rc=$$?; echo "Stopping server..."; \
-	      if [ -f $(IT_PIDFILE) ]; then kill -TERM $$(cat $(IT_PIDFILE)) 2>/dev/null || true; \
-	      wait $$(cat $(IT_PIDFILE)) 2>/dev/null || true; fi; \
+	      if [ -f "$(IT_PIDFILE)" ]; then kill -TERM $$(cat "$(IT_PIDFILE)") 2>/dev/null || true; \
+	      wait $$(cat "$(IT_PIDFILE)") 2>/dev/null || true; fi; \
 	      exit $$rc' EXIT INT TERM; \
-	echo "Starting server on :$(IT_PORT) ..."; \
-	PORT=$(IT_PORT) $(GO) run $(CMDDIR) >"$(IT_LOG)" 2>&1 & echo $$! > "$(IT_PIDFILE)"; \
-	echo "Waiting for readiness at $(IT_URL)/add ..."; \
-	limit=$$(( $(IT_WAIT_MS) / $(IT_STEP_MS) )); \
-	for i in $$(seq 1 $$limit); do \
-		if curl -sSf -X POST "$(IT_URL)/add" -H 'Content-Type: application/json' -d '{"a":0,"b":0}' >/dev/null 2>&1; then \
-			echo "Server is up."; break; \
-		fi; \
-		sleep $$(( $(IT_STEP_MS) ))e-3; \
+	\
+	echo "Starting server on ephemeral port ..."; \
+	# Prefer running the built binary for determinism
+	$(MAKE) -s build; \
+	PORT=0 PORT_FILE="$(PORT_FILE)" LOG_FILE="$(IT_LOG)" ./$(BUILD_DIR)/$(BINARY) >/dev/null 2>&1 & echo $$! > "$(IT_PIDFILE)"; \
+	\
+	# wait for port file to appear and read it
+	for i in $$(seq 1 100); do \
+		if [ -s "$(PORT_FILE)" ]; then break; fi; \
+		sleep 0.05; \
 	done; \
-	# Fail fast if not up
-	if ! curl -sSf -X POST "$(IT_URL)/add" -H 'Content-Type: application/json' -d '{"a":1,"b":2}' >/dev/null 2>&1; then \
-		echo "Server failed to start. Last 50 log lines:"; \
-		tail -n 50 "$(IT_LOG)" || true; \
-		exit 1; \
+	if [ ! -s "$(PORT_FILE)" ]; then \
+		echo "Port file not written; last log lines:"; tail -n 100 "$(IT_LOG)" || true; exit 1; \
 	fi; \
+	IT_PORT=$$(cat "$(PORT_FILE)"); \
+	IT_URL="http://127.0.0.1:$${IT_PORT}"; \
+	echo "Discovered port: $${IT_PORT}"; \
+	\
+	echo "Waiting for readiness at $${IT_URL}/healthz ..."; \
+	for i in $$(seq 1 100); do \
+		if curl -sf "$${IT_URL}/healthz" >/dev/null 2>&1; then echo "Server is up."; break; fi; \
+		sleep 0.05; \
+	done; \
+	curl -sf "$${IT_URL}/healthz" >/dev/null || { echo "Server failed to start. Last logs:"; tail -n 200 "$(IT_LOG)" || true; exit 1; }; \
+	\
 	echo "Running integration tests..."; \
-	BASE_URL="$(IT_URL)" $(GO) test -v -count=1 ./itest
+	BASE_URL="$${IT_URL}" $(GO) test -v -count=1 ./itest
 
 integration-clean: ## Clean integration artifacts
-	@rm -f "$(IT_PIDFILE)"
+	@rm -f "$(IT_PIDFILE)" "$(PORT_FILE)"
 
 bench: ## Run benchmarks (if any)
 	$(GO) test -bench=. -benchmem $(PKG)
@@ -170,7 +191,7 @@ ci-full: ## CI bundle: tidy, fmt, vet, lint, race, cover, cover-html, integratio
 	$(MAKE) integration-clean; \
 	exit $$rc
 
-clean: ## Clean generated artifacts
+clean: integration-clean ## Clean generated artifacts
 	@rm -fr "$(BUILD_DIR)"
 	@rm -f "$(COV_OUT)" "$(COV_HTML)" "$(IT_PIDFILE)" "$(IT_LOG)" "$(RUN_LOG)"
 
