@@ -1,7 +1,7 @@
 # kcalc-add
 
 A simple microservice written in Go that performs addition.  
-Designed as the first component of a distributed calculator (`kcalc`).
+Designed as one component of a distributed calculator (`kcalc`).
 
 ---
 
